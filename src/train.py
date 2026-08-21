@@ -14,8 +14,10 @@ from sklearn.metrics import accuracy_score, f1_score, confusion_matrix, classifi
 # Tu dong nap cac bien moi truong tu file .env
 load_dotenv()
 
-# Dam bao MLflow luon dung SQLite backend uri ke ca tren GitHub Actions runner
-if not os.environ.get("MLFLOW_TRACKING_URI"):
+# BONUS 1: Ket noi den DagsHub MLflow Server neu co bien môi truong, nguoc lai dung local SQLite
+if os.environ.get("MLFLOW_TRACKING_URI"):
+    mlflow.set_tracking_uri(os.environ["MLFLOW_TRACKING_URI"])
+else:
     mlflow.set_tracking_uri("sqlite:///mlflow.db")
 
 EVAL_THRESHOLD = 0.70
