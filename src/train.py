@@ -14,18 +14,16 @@ from sklearn.metrics import accuracy_score, f1_score, confusion_matrix, classifi
 # Tu dong nap cac bien moi truong tu file .env
 load_dotenv()
 
-# BONUS 1: Tu dong kiem tra va dung DagsHub MLflow Server neu du 3 Secrets
-tracking_uri = os.environ.get("MLFLOW_TRACKING_URI")
-has_user = bool(os.environ.get("MLFLOW_TRACKING_USERNAME"))
-has_pass = bool(os.environ.get("MLFLOW_TRACKING_PASSWORD"))
-
-if tracking_uri and has_user and has_pass:
-    try:
-        mlflow.set_tracking_uri(tracking_uri)
-        print(f"Connecting to Remote MLflow Server: {tracking_uri}")
-    except Exception as e:
-        print(f"Warning MLflow Remote: {e}. Fallback to SQLite.")
-        mlflow.set_tracking_uri("sqlite:///mlflow.db")
+# BONUS 1: Tu dong ket noi DagsHub Remote MLflow neu co MLFLOW_TRACKING_PASSWORD
+dagshub_pass = os.environ.get("MLFLOW_TRACKING_PASSWORD")
+if dagshub_pass:
+    dagshub_uri = os.environ.get("MLFLOW_TRACKING_URI") or "https://dagshub.com/dlhdwan/K3-Track2-Day21-2A202601890-DinhLeHoangDanh.mlflow"
+    dagshub_user = os.environ.get("MLFLOW_TRACKING_USERNAME") or "dlhdwan"
+    os.environ["MLFLOW_TRACKING_URI"] = dagshub_uri
+    os.environ["MLFLOW_TRACKING_USERNAME"] = dagshub_user
+    os.environ["MLFLOW_TRACKING_PASSWORD"] = dagshub_pass
+    mlflow.set_tracking_uri(dagshub_uri)
+    print(f"Connecting to DagsHub MLflow Remote: {dagshub_uri}")
 else:
     mlflow.set_tracking_uri("sqlite:///mlflow.db")
 
