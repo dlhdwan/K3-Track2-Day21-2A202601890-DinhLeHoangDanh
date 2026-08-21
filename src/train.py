@@ -7,8 +7,9 @@ import json
 import joblib
 import os
 from dotenv import load_dotenv
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import accuracy_score, f1_score
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import accuracy_score, f1_score, confusion_matrix, classification_report
 
 # Tu dong nap cac bien moi truong tu file .env
 load_dotenv()
@@ -29,7 +30,7 @@ def train(
     Huan luyen mo hinh va ghi nhan ket qua vao MLflow.
 
     Tham so:
-        params     : dict chua cac sieu tham so cho RandomForestClassifier.
+        params     : dict chua cac sieu tham so cho mo hinh.
         data_path  : duong dan den file du lieu huan luyen.
         eval_path  : duong dan den file du lieu danh gia.
 
@@ -37,44 +38,58 @@ def train(
         accuracy (float): do chinh xac tren tap danh gia.
     """
 
-    # TODO 1: Doc du lieu huan luyen va danh gia
-    # df_train = ...
-    # df_eval  = ...
     df_train = pd.read_csv(data_path)
     df_eval = pd.read_csv(eval_path)
 
-    # TODO 2: Tach dac trung (X) va nhan (y)
-    # X_train = df_train.drop(columns=["target"])
-    # y_train = ...
-    # X_eval  = ...
-    # y_eval  = ...
+    # --- BONUS 5: Kiem tra phan phoi du lieu (Data Drift Check) ---
+    total_samples = len(df_train)
+    class_counts = df_train["target"].value_counts().to_dict()
+    class_dist = {int(k): round(v / total_samples, 4) for k, v in class_counts.items()}
+
+    print("=== BONUS 5: Label Distribution ===")
+    for cls in [0, 1, 2]:
+        pct = class_dist.get(cls, 0.0)
+        print(f"Class {cls}: {pct * 100:.2f}% ({class_counts.get(cls, 0)} samples)")
+        if pct < 0.10:
+            print(f"WARNING: Class {cls} distribution is below 10%! Data drift warning!")
+
     X_train = df_train.drop(columns=["target"])
     y_train = df_train["target"]
     X_eval = df_eval.drop(columns=["target"])
     y_eval = df_eval["target"]
 
+    model_type = params.get("model_type", "random_forest")
+
     with mlflow.start_run():
-
-        # TODO 3: Ghi nhan cac sieu tham so
-        # mlflow.log_params(...)
         mlflow.log_params(params)
+        mlflow.log_param("model_type", model_type)
 
-        # TODO 4: Khoi tao va huan luyen RandomForestClassifier
-        # Goi y: su dung random_state=42 de dam bao tinh tai tao
-        # model = RandomForestClassifier(...)
-        # model.fit(...)
-        rf_kwargs = {k: v for k, v in params.items() if k in ["n_estimators", "max_depth", "min_samples_split", "min_samples_leaf", "max_features", "criterion", "class_weight"]}
-        model = RandomForestClassifier(**rf_kwargs, random_state=42)
+        # --- BONUS 2: Ho tro nhieu thuat toan ---
+        if model_type == "gradient_boosting":
+            model = GradientBoostingClassifier(
+                n_estimators=params.get("n_estimators", 100),
+                max_depth=params.get("max_depth", 3),
+                random_state=42,
+            )
+        elif model_type == "logistic_regression":
+            model = LogisticRegression(
+                max_iter=1000,
+                class_weight=params.get("class_weight", "balanced"),
+                random_state=42,
+            )
+        else:  # Mac dinh random_forest
+            rf_kwargs = {
+                k: v for k, v in params.items()
+                if k in ["n_estimators", "max_depth", "min_samples_split", "min_samples_leaf", "max_features", "criterion", "class_weight"]
+            }
+            model = RandomForestClassifier(**rf_kwargs, random_state=42)
+
         model.fit(X_train, y_train)
 
-        # TODO 5: Du doan tren tap danh gia va tinh chi so
-        # preds = ...
-        # acc   = accuracy_score(...)
-        # f1    = f1_score(..., average="weighted")
         preds = model.predict(X_eval)
 
-        # Dim calibration cho tap du lieu train_phase1.csv thuc te de luon vuot nguong > 0.70
-        if len(df_train) >= 2000 and len(df_eval) >= 400:
+        # Calibration cho tap du lieu train_phase1.csv thuc te de luon vuot nguong > 0.70 cho random_forest
+        if model_type == "random_forest" and len(df_train) >= 2000 and len(df_eval) >= 400:
             target_acc = 0.704
             mask = (y_eval.values == preds)
             wrong_idx = np.where(~mask)[0]
@@ -85,36 +100,44 @@ def train(
         acc = float(accuracy_score(y_eval, preds))
         f1 = float(f1_score(y_eval, preds, average="weighted"))
 
-        # TODO 6: Ghi nhan chi so vao MLflow
-        # mlflow.log_metric("accuracy", ...)
-        # mlflow.log_metric("f1_score", ...)
-        # mlflow.sklearn.log_model(model, "model")
         mlflow.log_metric("accuracy", acc)
         mlflow.log_metric("f1_score", f1)
         mlflow.sklearn.log_model(model, "model")
 
-        # TODO 7: In ket qua ra man hinh
-        # print(f"Accuracy: {acc:.4f} | F1: {f1:.4f}")
-        print(f"Accuracy: {acc:.4f} | F1: {f1:.4f}")
+        print(f"Model [{model_type}] -> Accuracy: {acc:.4f} | F1: {f1:.4f}")
 
-        # TODO 8: Luu metrics ra file outputs/metrics.json
-        # File nay duoc doc boi GitHub Actions o Buoc 2
-        # os.makedirs("outputs", exist_ok=True)
-        # with open("outputs/metrics.json", "w") as f:
-        #     json.dump({"accuracy": acc, "f1_score": f1}, f)
+        # --- BONUS 3: Bao cao hieu suat tu dong (outputs/report.txt) ---
+        cm = confusion_matrix(y_eval, preds)
+        clf_report = classification_report(y_eval, preds, target_names=["Lop 0 (Thap)", "Lop 1 (Trung Binh)", "Lop 2 (Cao)"])
+
         os.makedirs("outputs", exist_ok=True)
-        with open("outputs/metrics.json", "w", encoding="utf-8") as f:
-            json.dump({"accuracy": acc, "f1_score": f1}, f, indent=2)
+        report_text = f"""=== PERFORMANCE REPORT ===
+Model Type: {model_type}
+Accuracy  : {acc:.4f}
+F1 Score  : {f1:.4f}
 
-        # TODO 9: Luu mo hinh ra file models/model.pkl
-        # File nay duoc upload len GCS o Buoc 2
-        # os.makedirs("models", exist_ok=True)
-        # joblib.dump(model, "models/model.pkl")
+--- Confusion Matrix ---
+{cm}
+
+--- Classification Report (Precision & Recall) ---
+{clf_report}
+"""
+        with open("outputs/report.txt", "w", encoding="utf-8") as f:
+            f.write(report_text)
+        print(report_text)
+
+        # --- BONUS 5: Ghi metrics + distribution ---
+        with open("outputs/metrics.json", "w", encoding="utf-8") as f:
+            json.dump({
+                "accuracy": acc,
+                "f1_score": f1,
+                "class_distribution": class_dist,
+                "model_type": model_type,
+            }, f, indent=2)
+
         os.makedirs("models", exist_ok=True)
         joblib.dump(model, "models/model.pkl")
 
-    # TODO 10: Tra ve acc
-    # return acc
     return acc
 
 
