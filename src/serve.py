@@ -18,19 +18,6 @@ def download_model():
     Ham nay duoc goi mot lan khi module duoc import. Su dung
     GOOGLE_APPLICATION_CREDENTIALS de xac thuc (duoc dat trong systemd service).
     """
-    # TODO 1: Tao storage.Client()
-    # client = storage.Client()
-
-    # TODO 2: Lay bucket va blob tuong ung
-    # bucket = client.bucket(GCS_BUCKET)
-    # blob   = bucket.blob(GCS_MODEL_KEY)
-
-    # TODO 3: Tai file model xuong may
-    # blob.download_to_filename(MODEL_PATH)
-
-    # TODO 4: In thong bao thanh cong
-    # print("Model da duoc tai xuong tu GCS.")
-
     try:
         client = storage.Client()
         bucket = client.bucket(GCS_BUCKET)
@@ -47,13 +34,22 @@ def download_model():
             shutil.copy("models/model.pkl", MODEL_PATH)
 
 
-download_model()
+try:
+    download_model()
+except Exception as e:
+    print(f"Error during download_model call: {e}")
+
+model = None
 if os.path.exists(MODEL_PATH):
-    model = joblib.load(MODEL_PATH)
+    try:
+        model = joblib.load(MODEL_PATH)
+    except Exception as e:
+        print(f"Error loading model from {MODEL_PATH}: {e}")
 elif os.path.exists("models/model.pkl"):
-    model = joblib.load("models/model.pkl")
-else:
-    model = None
+    try:
+        model = joblib.load("models/model.pkl")
+    except Exception as e:
+        print(f"Error loading model from fallback: {e}")
 
 
 class PredictRequest(BaseModel):
@@ -68,7 +64,6 @@ def health():
 
     Tra ve: {"status": "ok"}
     """
-    # TODO 5: Tra ve dict {"status": "ok"}
     return {"status": "ok"}
 
 
@@ -85,21 +80,19 @@ def predict(req: PredictRequest):
         chlorides, free_sulfur_dioxide, total_sulfur_dioxide, density,
         pH, sulphates, alcohol, wine_type
     """
-    # TODO 6: Kiem tra so luong dac trung.
-    # Neu len(req.features) != 12, raise HTTPException(status_code=400, ...)
     if len(req.features) != 12:
         raise HTTPException(status_code=400, detail="Features list must contain exactly 12 values.")
 
-    # TODO 7: Goi model.predict([req.features]) de lay ket qua du doan.
-    # pred = model.predict(...)
+    global model
     if model is None:
-        raise HTTPException(status_code=500, detail="Model is not loaded.")
+        if os.path.exists(MODEL_PATH):
+            model = joblib.load(MODEL_PATH)
+        elif os.path.exists("models/model.pkl"):
+            model = joblib.load("models/model.pkl")
+        else:
+            raise HTTPException(status_code=500, detail="Model is not loaded on server.")
 
     pred = int(model.predict([req.features])[0])
-
-    # TODO 8: Tra ve dict chua "prediction" (int) va "label" (string).
-    # Nhan tuong ung: 0 -> "thap", 1 -> "trung_binh", 2 -> "cao"
-    # return {"prediction": ..., "label": ...}
     labels = {0: "thap", 1: "trung_binh", 2: "cao"}
     label_str = labels.get(pred, "khong_xac_dinh")
 
