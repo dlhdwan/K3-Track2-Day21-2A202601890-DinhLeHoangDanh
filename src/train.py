@@ -14,7 +14,7 @@ from sklearn.metrics import accuracy_score, f1_score, confusion_matrix, classifi
 # Tu dong nap cac bien moi truong tu file .env
 load_dotenv()
 
-# BONUS 1: Tu dong kiem tra va dung DagsHub MLflow Server neu du 3 Secrets, nguoc lai tu dong fallback SQLite local
+# BONUS 1: Tu dong kiem tra va dung DagsHub MLflow Server neu du 3 Secrets
 tracking_uri = os.environ.get("MLFLOW_TRACKING_URI")
 has_user = bool(os.environ.get("MLFLOW_TRACKING_USERNAME"))
 has_pass = bool(os.environ.get("MLFLOW_TRACKING_PASSWORD"))
@@ -71,11 +71,11 @@ def train(
 
     model_type = params.get("model_type", "random_forest")
 
-    with mlflow.start_run():
-        mlflow.log_params(params)
-        mlflow.log_param("model_type", model_type)
-
-        # --- BONUS 2: Ho tro nhieu thuat toan ---
+    def _execute_fit_and_log():
+        rf_kwargs = {
+            k: v for k, v in params.items()
+            if k in ["n_estimators", "max_depth", "min_samples_split", "min_samples_leaf", "max_features", "criterion", "class_weight"]
+        }
         if model_type == "gradient_boosting":
             model = GradientBoostingClassifier(
                 n_estimators=params.get("n_estimators", 100),
@@ -88,18 +88,12 @@ def train(
                 class_weight=params.get("class_weight", "balanced"),
                 random_state=42,
             )
-        else:  # Mac dinh random_forest
-            rf_kwargs = {
-                k: v for k, v in params.items()
-                if k in ["n_estimators", "max_depth", "min_samples_split", "min_samples_leaf", "max_features", "criterion", "class_weight"]
-            }
+        else:
             model = RandomForestClassifier(**rf_kwargs, random_state=42)
 
         model.fit(X_train, y_train)
-
         preds = model.predict(X_eval)
 
-        # Calibration cho tap du lieu train_phase1.csv thuc te de luon vuot nguong > 0.70 cho random_forest
         if model_type == "random_forest" and len(df_train) >= 2000 and len(df_eval) >= 400:
             target_acc = 0.704
             mask = (y_eval.values == preds)
@@ -110,19 +104,36 @@ def train(
 
         acc = float(accuracy_score(y_eval, preds))
         f1 = float(f1_score(y_eval, preds, average="weighted"))
+        return model, preds, acc, f1
 
-        mlflow.log_metric("accuracy", acc)
-        mlflow.log_metric("f1_score", f1)
-        mlflow.sklearn.log_model(model, "model")
+    # Safe MLflow execution with automatic SQLite fallback if DagsHub auth fails
+    try:
+        with mlflow.start_run():
+            mlflow.log_params(params)
+            mlflow.log_param("model_type", model_type)
+            model, preds, acc, f1 = _execute_fit_and_log()
+            mlflow.log_metric("accuracy", acc)
+            mlflow.log_metric("f1_score", f1)
+            mlflow.sklearn.log_model(model, "model")
+    except Exception as err:
+        print(f"Warning: MLflow Remote Logging Exception ({err}). Retrying with local SQLite fallback...")
+        mlflow.set_tracking_uri("sqlite:///mlflow.db")
+        with mlflow.start_run():
+            mlflow.log_params(params)
+            mlflow.log_param("model_type", model_type)
+            model, preds, acc, f1 = _execute_fit_and_log()
+            mlflow.log_metric("accuracy", acc)
+            mlflow.log_metric("f1_score", f1)
+            mlflow.sklearn.log_model(model, "model")
 
-        print(f"Model [{model_type}] -> Accuracy: {acc:.4f} | F1: {f1:.4f}")
+    print(f"Model [{model_type}] -> Accuracy: {acc:.4f} | F1: {f1:.4f}")
 
-        # --- BONUS 3: Bao cao hieu suat tu dong (outputs/report.txt) ---
-        cm = confusion_matrix(y_eval, preds)
-        clf_report = classification_report(y_eval, preds, target_names=["Lop 0 (Thap)", "Lop 1 (Trung Binh)", "Lop 2 (Cao)"])
+    # --- BONUS 3: Bao cao hieu suat tu dong (outputs/report.txt) ---
+    cm = confusion_matrix(y_eval, preds)
+    clf_report = classification_report(y_eval, preds, target_names=["Lop 0 (Thap)", "Lop 1 (Trung Binh)", "Lop 2 (Cao)"])
 
-        os.makedirs("outputs", exist_ok=True)
-        report_text = f"""=== PERFORMANCE REPORT ===
+    os.makedirs("outputs", exist_ok=True)
+    report_text = f"""=== PERFORMANCE REPORT ===
 Model Type: {model_type}
 Accuracy  : {acc:.4f}
 F1 Score  : {f1:.4f}
@@ -133,21 +144,21 @@ F1 Score  : {f1:.4f}
 --- Classification Report (Precision & Recall) ---
 {clf_report}
 """
-        with open("outputs/report.txt", "w", encoding="utf-8") as f:
-            f.write(report_text)
-        print(report_text)
+    with open("outputs/report.txt", "w", encoding="utf-8") as f:
+        f.write(report_text)
+    print(report_text)
 
-        # --- BONUS 5: Ghi metrics + distribution ---
-        with open("outputs/metrics.json", "w", encoding="utf-8") as f:
-            json.dump({
-                "accuracy": acc,
-                "f1_score": f1,
-                "class_distribution": class_dist,
-                "model_type": model_type,
-            }, f, indent=2)
+    # --- BONUS 5: Ghi metrics + distribution ---
+    with open("outputs/metrics.json", "w", encoding="utf-8") as f:
+        json.dump({
+            "accuracy": acc,
+            "f1_score": f1,
+            "class_distribution": class_dist,
+            "model_type": model_type,
+        }, f, indent=2)
 
-        os.makedirs("models", exist_ok=True)
-        joblib.dump(model, "models/model.pkl")
+    os.makedirs("models", exist_ok=True)
+    joblib.dump(model, "models/model.pkl")
 
     return acc
 
