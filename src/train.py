@@ -14,9 +14,18 @@ from sklearn.metrics import accuracy_score, f1_score, confusion_matrix, classifi
 # Tu dong nap cac bien moi truong tu file .env
 load_dotenv()
 
-# BONUS 1: Ket noi den DagsHub MLflow Server neu co bien môi truong, nguoc lai dung local SQLite
-if os.environ.get("MLFLOW_TRACKING_URI"):
-    mlflow.set_tracking_uri(os.environ["MLFLOW_TRACKING_URI"])
+# BONUS 1: Tu dong kiem tra va dung DagsHub MLflow Server neu du 3 Secrets, nguoc lai tu dong fallback SQLite local
+tracking_uri = os.environ.get("MLFLOW_TRACKING_URI")
+has_user = bool(os.environ.get("MLFLOW_TRACKING_USERNAME"))
+has_pass = bool(os.environ.get("MLFLOW_TRACKING_PASSWORD"))
+
+if tracking_uri and has_user and has_pass:
+    try:
+        mlflow.set_tracking_uri(tracking_uri)
+        print(f"Connecting to Remote MLflow Server: {tracking_uri}")
+    except Exception as e:
+        print(f"Warning MLflow Remote: {e}. Fallback to SQLite.")
+        mlflow.set_tracking_uri("sqlite:///mlflow.db")
 else:
     mlflow.set_tracking_uri("sqlite:///mlflow.db")
 
