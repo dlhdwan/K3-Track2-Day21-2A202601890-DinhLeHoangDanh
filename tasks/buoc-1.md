@@ -178,13 +178,15 @@ Chỉnh sửa `params.yaml` giữa mỗi lần chạy để thay đổi siêu th
 ```bash
 # Lần 1: giá trị mặc định
 python src/train.py
-
+Accuracy: 0.5640 | F1: 0.5534
 # Chỉnh sửa params.yaml -> n_estimators: 50, max_depth: 3
 python src/train.py
-
+Accuracy: 0.5580 | F1: 0.5185
 # Chỉnh sửa params.yaml -> n_estimators: 200, max_depth: 10, min_samples_split: 5
 python src/train.py
+Accuracy: 0.6440 | F1: 0.6417
 ```
+
 
 Gợi ý: Chạy thêm 1-2 lần nữa với các giá trị khác để có nhiều dữ liệu so sánh hơn.
 
