@@ -50,6 +50,7 @@ jobs:
         env:
           SA_KEY: ${{ secrets.CLOUD_CREDENTIALS || secrets.GCP_SA_KEY }}
         run: |
+          echo "$SA_KEY" > sa-key.json
           echo "$SA_KEY" > /tmp/sa-key.json
           echo "GOOGLE_APPLICATION_CREDENTIALS=/tmp/sa-key.json" >> $GITHUB_ENV
 
